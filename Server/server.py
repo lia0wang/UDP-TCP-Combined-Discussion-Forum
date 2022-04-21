@@ -4,83 +4,41 @@ Created Mar 15, 2022
 @author: Wang Liao, z5306312
 
 Usage: python3 server.py [port]
-
-Description:
-    This is the server side for the discussion forum, the client and server must communicate using both TCP and UDP.
-    The server should concurrently open a UDP and TCP port.
-    User multi-threading to handle the data from clients concurrently.
-    Since we are using UDP, we need to deal with the packet loss of UDP by using the timeout for retransmission.
-
-Features:
-    - CRT: Create Thread
-    - LST: List Threads
-    - MSG: Post Message
-    - DLT: Delete Message
-    - RDT: Read Thread
-    - EDT: Edit Message
-    - UPD: Upload File
-    - DWN: Download File
-    - RMV: Remove Thread
-    - XIT: Exit
 '''
 
-'''
-Design:
-    When the server starts up, the forum is empty. - no threads, no messages, no uploaded files.
-    The server should open a UDP socket and wait for an authentication data from the client.
-    Once authenticated, the server should should service CREATE_THREAD, LIST_THREADS, POST_MESSAGE, DELETE_MESSAGE, READ_THREAD, EDIT_MESSAGE, REMOVE_THREAD, XIT requests from the client.
-    This will require the client and server to exchange messages using UDP.
-    The server should concurrently open a TCP socket and wait for a connection from the client.
-    Once connected, the server should service DOWNLOAD_FILE and UPLOAD_FILE requests from the client.
-    The TCP connection should be closed after the file transfer is complete.
-    The user can only initiate the next command after the previous command is complete.
-
-    We need to define data structures to store the information of the forum, such as:
-        - threads: a list of threads containing thread_title
-        - users: a dictionary of users containing username and password
-        - online_users: a list of online users
-        - messages: a dictionary of messages containing thread_title, message_id, message_content, message_author
-        - files: a dictionary of files
-
-    Since the server must interact with multiple clients, we need to implement multi-threading.
-    Since it is feasible for multiple clients to send and receive data from the same udp socket,
-    we do not need to create multiple udp sockets.
-
-    When interacting with the client, the server should receive the data for a command.
-
-'''
-
-from http import client
+########################################################################################################################
+#                                                                                                                      #
+#                                                      LIBRARIES                                                       #                                                                                       
+#                                                                                                                      #
+########################################################################################################################
+import os
 import sys
 import threading
-import time
-import os
 import json
+import time
 from socket import *
 from _thread import *
 
 ########################################################################################################################
 #                                                                                                                      #
-#                                                   GLOBAL VARIABLES                                                   #                                                                                                       
+#                                                  GLOBAL VARIABLES                                                    #                                                                                                       
 #                                                                                                                      #
 ########################################################################################################################
-PORT = None # the port number of the server
-CLIENT_PORT = 9999
+PORT = None
 clients = set()
-threads = [] # a list of threads
-users = {} # a dictionary of users containing username and password
-online_users = [] # a list of online users
-files = [] # a list of files
-# messages = {} # a dictionary of messages containing thread_title, message_id, message_content, message_author
+threads = []
+users = {}
+online_users = [] 
+files = [] 
 
 ########################################################################################################################
 #                                                                                                                      #
-#                                                    HELPER FUNCTIONS                                                  #                                                                                                       
+#                                                  HELPER FUNCTIONS                                                    #                                                                                                       
 #                                                                                                                      #
 ########################################################################################################################
 def port_checker():
     '''
-    This function is used to check if the port is valid.
+    Check if the port number is valid.
     '''
     if len(sys.argv) != 2:
         print('Usage: python3 server.py [port]')
@@ -94,16 +52,24 @@ def port_checker():
     return port
 
 def process_credentials():
-    # initialize the credentials of the users
+    '''
+    Process the credentials file.
+    ''' 
+    # if the credentials file does not exist
     if not os.path.exists('credentials.txt'):
         print('File not found: credentials.txt')
         exit()
-    with open('credentials.txt', 'r+') as f: # open the file in read and write mode
+
+    # read the credentials file
+    with open('credentials.txt', 'r+') as f:
         for user_info in f.readlines():
             user_info = user_info.strip().split(' ')
             users[user_info[0]] = user_info[1]
 
 def server_startup(port):
+    '''
+    Start up the server.
+    '''
     # create a UDP socket
     udp_socket = socket(AF_INET, SOCK_DGRAM)
     udp_socket.bind(('', port))
@@ -115,26 +81,25 @@ def server_startup(port):
         try:
             data, add = udp_receive_data(udp_socket)
             clients.add(add)
-            thread = threading.Thread(target=client_handler, args=(udp_socket, data, add))
-            thread.daemon = True 
+            thread = threading.Thread(target=client_handler, args=(udp_socket, data, add)) # create a new thread for each client
+            thread.daemon = True # the main thread can exit when the server is stopped
             thread.start()
 
         except timeout:
             pass
 
-    # close the sockets
     udp_socket.close()
 
-    print("Server is shutting down")
 def client_handler(client_udp_socket, data, add):
+    ''' 
+    Handle the client requests.
+    '''
     global threads
     global users
     global online_users
     global files
-    # global messages
 
-    user = data['username']
-    command = data['command']
+    user, command = data['username'], data['command']
 
     print("{} issued {} command".format(user, command))
 
@@ -173,15 +138,21 @@ def client_handler(client_udp_socket, data, add):
         return
 
 def udp_send_response(udp_soc, response, client_add):
+    ''' 
+    Send the response to the client.
+    '''
     udp_soc.sendto(json.dumps(response).encode('utf-8'), client_add)
-    print('Sent response {} to client'.format(response))
+    # print('Sent response {} to client'.format(response))
 
 def udp_receive_data(udp_soc):
+    ''' 
+    Receive the data from the client.
+    '''
     while True:
         try:
             data, add = udp_soc.recvfrom(1024)
             data = json.loads(data.decode('utf-8'))
-            print('Received data {} from client'.format(data))
+            # print('Received data {} from client'.format(data))
             return data, add
         except timeout:
             continue
@@ -192,12 +163,16 @@ def udp_receive_data(udp_soc):
 #                                                                                                                      #
 ########################################################################################################################
 def AUTH_USER(data, add, users, online_users, client_udp_socket):
+    '''
+    User authentication.
+    '''
     global PORT
     response = {
         'type': '',
         'status': 'OK',
     }
     username = data['username']
+
     print("Client authenticating")
 
     # if the username is in online_users, then the user is already logged in 
@@ -205,43 +180,39 @@ def AUTH_USER(data, add, users, online_users, client_udp_socket):
         response['type'] = 'ONLINE'
         response['status'] = 'ERROR'
         print('{} has already logged in'.format(username))
-
-        udp_send_response(client_udp_socket, response, add)
         return users, online_users
     elif username in users:
+        # if the username is in users list then the user is an old user
         response['type'] = 'OLD'
         response['status'] = 'PWDNEED'
-        udp_send_response(client_udp_socket, response, add)
-    # if the username is not in online_users, then the user is not logged in
     elif username not in users:
+        # if the username is not in users then create a new user
         response['type'] = 'NEW'
         response['status'] = 'PWDNEED'
-        udp_send_response(client_udp_socket, response, add)
+    udp_send_response(client_udp_socket, response, add)
 
     data, add = udp_receive_data(client_udp_socket)
-
     password = data['password']
 
+    # for the old user
     if username in users:
         if password == users[username]:
-            # if the password is correct, then the user is logged in
             response['type'] = 'OLD_SUC'
             response['status'] = 'OK'
             print('{} successful login'.format(username))
             online_users.append(username)
         else:
-            # if the password is incorrect, then the user is not logged in
+        # if the password is incorrect, then the user is not logged in
             response['type'] = 'PWD'
             response['status'] = 'FAIL'
             print('{} Incorrect password'.format(username))
+    # for the new user
     else:
-        # if the username is not in the users dictionary, then create a new user
         response['type'] = 'NEW_SUC'
         response['status'] = 'OK'
         print('Welcome, {}'.format(username))
         
-        # add the new user to the users dictionary
-        users[username] = password
+        users[username] = password # update the users list
         online_users.append(username)
 
         # write the new user to credentials.txt
@@ -249,16 +220,17 @@ def AUTH_USER(data, add, users, online_users, client_udp_socket):
             f.write('\n{} {}'.format(username, password))
     
     udp_send_response(client_udp_socket, response, add)
-
     return users, online_users
 
 def CREATE_THREAD(data, add, threads, client_udp_socket):
+    '''
+    Create a new thread.
+    '''
     global PORT
     response = {
         'status': 'OK'
     }
-    thread_title = data['thread_title']
-    thread_creator = data['username']
+    thread_title, thread_creator = data['thread_title'], data['username']
 
     # if the thread title is in the threads list, then the thread already exists
     if thread_title in threads:
@@ -271,18 +243,21 @@ def CREATE_THREAD(data, add, threads, client_udp_socket):
 
         threads.append(thread_title)
         with open(thread_title, 'w+') as f:
-            f.write('{}\n'.format(thread_creator))
+            f.write('{}\n'.format(thread_creator)) # write the thread creator to the thread
     
     udp_send_response(client_udp_socket, response, add)
     return threads
         
 def LIST_THREADS(threads, add, client_udp_socket):
+    '''
+    List all the threads.
+    '''
     global PORT
     response = {
         'status': 'OK',
     }
     
-    # if there are no threads, then there are no threads to list
+    # if there are no threads to list
     if len(threads) == 0:
         response['status'] = 'FAIL'
     else:
@@ -293,13 +268,15 @@ def LIST_THREADS(threads, add, client_udp_socket):
     udp_send_response(client_udp_socket, response, add)
 
 def POST_MESSAGE(data, add, threads, client_udp_socket):
+    '''
+    Post a message to a thread.
+    '''
     global PORT
     response = {
         'status': 'OK',
     }
-    thread_title = data['thread_title']
-    thread_creator = data['username']
-    msg_content = data['message']
+    thread_title, thread_creator, msg_content = data['thread_title'], data['username'], data['message']
+
     # if the thread title is not in the threads list, then the thread does not exist
     if thread_title not in threads:
         response['status'] = 'FAIL'
@@ -319,28 +296,29 @@ def POST_MESSAGE(data, add, threads, client_udp_socket):
     return threads
         
 def DELETE_MESSAGE(data, add, threads, client_udp_socket):
+    '''
+    Delete a message from a thread.
+    '''
     global PORT
     response = {
         'status': 'OK',
     }
-    thread_title = data['thread_title']
-    thread_creator = data['username']
-    msg_index = data['message_id']
+    thread_title, thread_creator, msg_index = data['thread_title'], data['username'], data['message_id']
 
-    # if the thread title is not in the threads list and the msg is not in the thread, then return FAIL
+    # if the thread title is not in the threads list
     if thread_title not in threads:
         response['status'] = 'NO_THREAD'
         print('Thread {} does not exist'.format(thread_title))
         udp_send_response(client_udp_socket, response, add)
     
     else:
-        # if the msg index is out of range, then return FAIL
+        # if the msg index is out of range
         if int(msg_index) <= 0:
             response['status'] = 'NO_MSG'
             print('Index of message: {} is out of range'.format(msg_index))
             udp_send_response(client_udp_socket, response, add)
 
-        # find the line that contains the message index
+        # find the line that contains the message index and corresponding line number
         line_to_remove = ''
         line_num = 0
         with open(thread_title, 'r') as f:
@@ -351,16 +329,16 @@ def DELETE_MESSAGE(data, add, threads, client_udp_socket):
                     line_num = lines.index(line)
                     break
 
-        # if msg is not in the thread, then return FAIL
+        # if thread is empty, no msg in the thread
         if line_to_remove == '':
             response['status'] = 'NO_MSG'
             print('The message does not exist') 
-        # if the user is not the creator of the thread, then return FAIL
+        # if the user is not the creator of the thread
         elif thread_creator != lines[line_num].split(' ')[1][:-1]:
             response['status'] = 'FAIL'
             print('Message cannot be deleted')
-        # if the user is the creator of the thread, then delete the message
         else:
+            # if the user is the creator of the thread, then delete the message
             response['status'] = 'OK'
             print('Message has been deleted')
 
@@ -374,6 +352,9 @@ def DELETE_MESSAGE(data, add, threads, client_udp_socket):
         udp_send_response(client_udp_socket, response, add)
 
 def READ_THREAD(data, add, threads, client_udp_socket):
+    '''
+    Return the messages in the thread.
+    '''
     global PORT
     response = {
         'status': 'OK',
@@ -383,15 +364,15 @@ def READ_THREAD(data, add, threads, client_udp_socket):
     # if the thread title is not in the threads list, then the thread does not exist
     if thread_title not in threads:
         response['status'] = 'FAIL'
-        print('Incorrect thread specified')
+        print('Thread {} does not exist'.format(thread_title))
     else:
-        # if the thread title is in the threads list, then get the messages from the thread
+        # if the thread title exists, then get the messages from the thread
         response['messages'] = []
         with open(thread_title, 'r') as f:
             lines = f.readlines()
         response['messages'] = lines[1:]
     
-        # if the thread is empty, then return FAIL
+        # if the thread is empty,
         if len(response['messages']) == 0:
             response['status'] = 'NO_MSG'
             print('Thread {} is empty'.format(thread_title))
@@ -402,24 +383,23 @@ def READ_THREAD(data, add, threads, client_udp_socket):
     udp_send_response(client_udp_socket, response, add)
 
 def EDIT_MESSAGE(data, add, threads, client_udp_socket):
+    '''
+    Edit a message in a thread.
+    '''
     global PORT
     response = {
         'status': 'OK',
     }
-    thread_title = data['thread_title']
-    thread_creator = data['username']
-    msg_index = data['message_id']
-    msg_content = data['message']
+    thread_title, thread_creator, msg_index, msg_content = data['thread_title'], data['username'], data['message_id'], data['message']
 
-    # if the thread title is not in the threads list and the msg is not in the thread, then return FAIL
+    # if the thread title is not in the threads list
     if thread_title not in threads:
         response['status'] = 'NO_THREAD'
         print('Thread {} does not exist'.format(thread_title))
         udp_send_response(client_udp_socket, response, add)
-    
-    # if thread exists
     else:
-        # if the msg index is out of range, then return FAIL
+    # if thread exists
+        # if the msg index is out of range
         if int(msg_index) <= 0:
             response['status'] = 'NO_MSG'
             print('Index of message: {} is out of range'.format(msg_index))
@@ -436,21 +416,20 @@ def EDIT_MESSAGE(data, add, threads, client_udp_socket):
                     line_num = lines.index(line)
                     break
 
-        # if msg is not in the thread, then return FAIL
+        # if msg is not in the thread
         if line_to_edit == '':
             response['status'] = 'NO_MSG'
             print('Message does not exist'.format(msg_index))
-        # if the user is not the creator of the thread, then return FAIL
+        # if the user is not the creator of the thread
         elif thread_creator != lines[line_num].split(' ')[1][:-1]:
             response['status'] = 'FAIL'
-            print('Message cannot be edited')
-        
-        # if the user is the creator of the thread, then edit the message
+            print('Message cannot be edited') 
         else:
+        # if the user is the creator of the thread, then edit the message
             response['status'] = 'OK'
             print('Message has been edited'.format(msg_index))
 
-            # edit the message in the thread
+            # rewrite the message
             lines[line_num] = '{} {}: {}\n'.format(msg_index, thread_creator, msg_content)
             
             # add the messages to the thread
@@ -458,26 +437,25 @@ def EDIT_MESSAGE(data, add, threads, client_udp_socket):
                 f.writelines(lines)
         
         udp_send_response(client_udp_socket, response, add)
-    
     return threads
 
 def UPLOAD_FILE(data, add, files, threads, client_udp_socket):
+    '''
+    Upload a file to the thread.
+    '''
     global PORT
     response = {
         'status': 'OK',
     }
-    thread_title = data['thread_title']
-    thread_creator = data['username']
-    file_name = data['file_name']
-    file_size = data['file_size']
-
-    # if the thread title is not in the threads list and the msg is not in the thread, then return FAIL
+    thread_title, thread_creator, file_name, file_size = data['thread_title'], data['username'], data['file_name'], data['file_size']
+    
+    # if the thread title is not in the threads list
     if thread_title not in threads:
         response['status'] = 'FAIL'
         print('Thread {} does not exist'.format(thread_title))
         udp_send_response(client_udp_socket, response, add)
     else:
-        # if the thread title is in the threads list, then get the messages from the thread
+    # if the thread title is in the threads list, then upload the file
         response['status'] = 'UPLOAD_FILE'
         udp_send_response(client_udp_socket, response, add)
 
@@ -501,37 +479,37 @@ def UPLOAD_FILE(data, add, files, threads, client_udp_socket):
         tcp_client_socket.close()
         download_file.close()
 
-        # if the file size is not the same as the one in the request, then return FAIL
+        # if the file size is not the same
         if int(file_size) != os.path.getsize('{}-{}'.format(thread_title, file_name)):
             response['status'] = 'FAIL'
             udp_send_response(client_udp_socket, response, add)
         else:
-            # if the file size is the same as the one in the request, then add the file to the thread
+            # if the file size is the same, then add the file to the thread
             response['status'] = 'OK'
             with open(thread_title, 'a') as f:
                 f.write('{} uploaded {}\n'.format(thread_creator, file_name))
             print('{} uploaded file {} to {} thread'.format(thread_creator, file_name, thread_title))
-            # add the file to the files list
-            files.append('{}-{}'.format(thread_title, file_name))
-
+            files.append('{}-{}'.format(thread_title, file_name)) # add the file to the files list
             udp_send_response(client_udp_socket, response, add)
 
     return files
 
 def DOWNLOAD_FILE(data, add, threads, files, client_udp_socket):
+    '''
+    Download a file from the thread.
+    '''
     response = {
         'status': 'OK',
     }
-    thread_title = data['thread_title']
-    file_name = data['file_name']
+    thread_title, file_name = data['thread_title'], data['file_name']
 
-    # if the thread title is not in the threads list and the msg is not in the thread, then return FAIL
+    # if the thread title is not in the threads list
     if thread_title not in threads:
         response['status'] = 'FAIL'
         print('Thread {} does not exist'.format(thread_title))
         udp_send_response(client_udp_socket, response, add)
     else:
-        # if the file is not in the files list, then return FAIL
+        # if the file is not in the files list
         if '{}-{}'.format(thread_title, file_name) not in files:
             response['status'] = 'FILE_NOT_FOUND'
             print('File {} does not exist'.format(file_name))
@@ -560,19 +538,22 @@ def DOWNLOAD_FILE(data, add, threads, files, client_udp_socket):
             tcp_send_socket.close()
 
             data, add = udp_receive_data(client_udp_socket)
+
             if data['status'] == 'OK':
                 print('{} downloaded file {} from {} thread'.format(data['username'], file_name, thread_title))
             elif data['status'] == 'FAIL':
                 print('{} failed to download file {} from {} thread'.format(data['username'], file_name, thread_title))
 
 def REMOVE_THREAD(data, add, threads, client_udp_socket):
+    '''
+    Remove a thread.
+    '''
     response = {
         'status': 'OK',
     }
-    thread_title = data['thread_title']
-    thread_creator = data['username']
+    thread_title, thread_creator = data['thread_title'], data['username']
 
-    # if the thread title is not in the threads list, then return FAIL
+    # if the thread title is not in the threads list
     if thread_title not in threads:
         response['status'] = 'NO_THREAD'
         print('Thread {} does not exist'.format(thread_title))
@@ -581,13 +562,12 @@ def REMOVE_THREAD(data, add, threads, client_udp_socket):
         with open(thread_title, 'r') as f:
             lines = f.readlines()
     
-        # if the user is not the creator of the thread, then return FAIL
+        # if the user is not the creator of the thread
         if thread_creator != lines[0].split(' ')[0].rstrip():
             response['status'] = 'FAIL'
-            print('Thread {} cannot be removed'.format(thread_title))
-        
-        # if the user is the creator of the thread, then remove the thread
+            print('Thread {} cannot be removed'.format(thread_title))     
         else:
+            # if the user is the creator of the thread, then remove the thread
             response['status'] = 'OK'
             print('Thread {} removed'.format(thread_title))
             os.remove(thread_title)
@@ -597,12 +577,15 @@ def REMOVE_THREAD(data, add, threads, client_udp_socket):
     return threads
 
 def EXIT_USER(data, add, online_users, client_udp_socket):
+    '''
+    Exit the user.
+    '''
     response = {
         'status': 'OK',
     }
     user_name = data['username']
 
-    # if the user is not in the online users list, then return FAIL
+    # if the user is not in the online users list
     if user_name not in online_users:
         response['status'] = 'FAIL'
         print('User {} is not online'.format(user_name))
@@ -622,7 +605,4 @@ def EXIT_USER(data, add, online_users, client_udp_socket):
 if __name__ == '__main__':
     PORT = port_checker()
     process_credentials()
-    # initialize the threads
-    threads = []
-    # start the server
     server_startup(PORT)
