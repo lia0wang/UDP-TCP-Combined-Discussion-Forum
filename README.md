@@ -1,97 +1,202 @@
-# Overview
-not web-based (i.e. non-HTTP) but uses a custom application layer protocol
+# ASSIGNMENT REPORT
 
-## Basic Functions
-    - [ ] Create new user
-    - [ ] Create 
-    - [ ] File Upload
-    - [ ] File Download
-        Once the TCP connection is
-        established, the file upload or download should be initiated. The TCP connection should be
-        immediately closed after the file transfer is completed. 
-    - [ ] 
+Created Mar 15, 2022
+@author: Wang Liao, z5306312
+Python 3.9.7
 
-## Protocol Requirements
-Most functions should be
-implemented over UDP except for uploading and downloading of files, which should use TCP.
+## Features Design
 
-Note that, UDP and TCP port numbers are distinct (e.g., UDP port
-53 is distinct from TCP port 53). Thus, your server can concurrently open a UDP and TCP port
-with the specified port number (as the command line argument).
+Features except UPD/DWN are entirely implemented using UDP.
 
-## Client
-Since, UDP segments can be occasionally lost, you must implement some simple mechanisms
-to recover from it. 
+UPD and DWN are implemented using both UDP and TCP
 
-## Server 
-When the server starts up, the forum is empty – i.e., there
-exist no threads, no messages, no uploaded files. 
+- UDP for communication between client and server
 
+- TCP for file transfer: the tcp socket created only when the file needs to be downloaded or uploaded, and closed immediately after the file transfer is complete.
 
-    - A server and a single active client
-        - Multiple clients will connect to the server but sequentially – one client connects, interacts, exits, the second client connects, interacts, exits and so on. 
-    - A server and multiple concurrent clients
+- For example, in **client.py**
+  
+  ```python
+        file_s = socket(AF_INET, SOCK_STREAM)
+        file_s.connect(('', PORT))
+        with open(file_name, 'wb') as f:
+            while True:
+                data = file_s.recv(1024)
+                if not data:
+                    break
+                f.write(data)
+        file_s.close()
+  ```
 
+## Server Design
 
-    Description:
-    This is the server side for the discussion forum, the client and server must communicate using both TCP and UDP.
-    The server should concurrently open a UDP and TCP port.
-    User multi-threading to handle the data from clients concurrently.
-    Since we are using UDP, we need to deal with the packet loss of UDP by using the timeout for retransmission.
+#### Overview
 
-Features:
-    - CRT: Create Thread
-    - LST: List Threads
-    - MSG: Post Message
-    - DLT: Delete Message
-    - RDT: Read Thread
-    - EDT: Edit Message
-    - UPD: Upload File
-    - DWN: Download File
-    - RMV: Remove Thread
-    - XIT: Exit
+**Data structure**
 
-Design:
-    When the server starts up, the forum is empty. - no threads, no messages, no uploaded files.
-    The server should open a UDP socket and wait for an authentication data from the client.
-    Once authenticated, the server should should service CREATE_THREAD, LIST_THREADS, POST_MESSAGE, DELETE_MESSAGE, READ_THREAD, EDIT_MESSAGE, REMOVE_THREAD, XIT requests from the client.
-    This will require the client and server to exchange messages using UDP.
-    The server should concurrently open a TCP socket and wait for a connection from the client.
-    Once connected, the server should service DOWNLOAD_FILE and UPLOAD_FILE requests from the client.
-    The TCP connection should be closed after the file transfer is complete.
-    The user can only initiate the next command after the previous command is complete.
+- **clients**: a set of client sockets to remove the duplicate client sockets
+- **threads**: a list of thread_title to store the threads
+- **users**: a dictionary to store the user information
+- **online_users**: a list to store the online usernames
+- **files**: a list to store the files
 
-    We need to define data structures to store the information of the forum, such as:
-        - threads: a list of threads containing thread_title
-        - users: a dictionary of users containing username and password
-        - online_users: a list of online users
-        - messages: a dictionary of messages containing thread_title, message_id, message_content, message_author
-        - files: a dictionary of files
+When the server starts up, the forum is empty. no threads, no messages, no uploaded files.
 
-    Since the server must interact with multiple clients, we need to implement multi-threading.
-    Since it is feasible for multiple clients to send and receive data from the same udp socket,
-    we do not need to create multiple udp sockets.
+The server should open a UDP socket and wait for an authentication data from the clients.
 
-    When interacting with the client, the server should receive the data for a command.
+Once authentication is complete, the server should service each command issued by the clients.
 
-    Description:
-    This is the client side for the discussion forum, the client and server must communicate using both TCP and UDP.
-    The server should concurrently open a UDP and TCP port.
-    Since we are using UDP, we need to deal with the packet loss of UDP by using the timeout for retransmission.
-Features:
-    - CRT: Create Thread
-    - LST: List Threads
-    - MSG: Post Message
-    - DLT: Delete Message
-    - RDT: Read Thread
-    - EDT: Edit Message
-    - UPD: Upload File
-    - DWN: Download File
-    - RMV: Remove Thread
-    - XIT: Exit
+The user can only initiate the next command after the previous command is complete.
 
-Design:
-    Upon initiation, the client should first execute the user authentication process,
-    following authentication, the user should be prompted to enter the commands.
-    almost all commands require request/response, so the client should send the request to the server
-    the client should not maintain any state about the discussion forum
+The server transfers file using TCP.
+
+The server communicates with the client using UDP.
+
+The server should be able to handle multiple clients.
+
+#### Implementation and Purpose
+
+To implement the concurrent interaction with multiple clients, I use multi-threading to handle the requests from clients.
+
+```python
+    thread = threading.Thread(target=client_handler, args=(udp_socket, data, add)) # create a new thread for each client
+    thread.daemon = True # the main thread can exit when the server is stopped
+    thread.start()
+```
+
+To deal with the packet loss of UDP, I use retransmission mechanism with setting the timeout.
+
+```python
+def udp_receive_data(udp_soc):
+    while True:
+        try:
+            data, add = udp_soc.recvfrom(1024)
+            data = json.loads(data.decode('utf-8'))
+            return data, add
+        except timeout:
+            continue
+```
+
+## Client Design
+
+#### Overview
+
+**Data structure**
+    - **commands**: a list to store the commands
+    - **user_info**: a dictionary to store the user information
+
+The client executes the user authentication process at the beginning.
+The client should be prompted to enter one of the commands.
+The clients communicate with the server using UDP.
+The client does not maintain any state about the forum.
+
+#### Implementation and Purpose
+
+To deal with the packet loss of UDP, I use retransmission mechanism with setting the timeout.
+
+```python
+def udp_send_request(client_udp_socket, request):
+    global PORT
+    con_trails = 0
+    client_udp_socket.sendto(json.dumps(request).encode('utf-8'), ('', PORT))
+    while 1:
+        print('Waiting for response...')
+        try:
+            con_trails = 0
+            response, server_address = client_udp_socket.recvfrom(1024)
+            response = json.loads(response.decode('utf-8'))
+            return response
+        except timeout:
+            print('No response from server')
+            con_trails += 1
+            if con_trails < 3:
+                print('Retransmitting...')
+                continue
+            else:
+                print('Connection failed')
+                break
+```
+
+## Application Layer Message Format & How the System Works
+
+#### Overview
+
+I used json to transfer the data between server and client.
+Since the json format is more readable and easy to understand, it is easier to debug code and maintain it.
+
+#### Client side
+
+The Client first read in the input commands and split the commands into different variables.
+
+```python
+thread_title = input_commands.split()[1]
+message_id = input_commands.split()[2]
+message = input_commands.split()[3:]
+```
+
+Then it create a request dictionary which contains the actual command, the user info and the split variables
+
+```python
+    thread_request = {
+        'command': 'RMV',
+        'username': user_info['username'],
+        'password': user_info['password'],
+        'thread_title': thread_title
+    }
+```
+
+Then it sends the request to the server, and get the response.
+
+```python
+response = udp_send_request(udp_s, message_request)
+```
+
+Finally, depending on the response of server, the client will print the corresponding message.
+
+```python
+    if response['status'] == 'NO_THREAD':
+        print('Thread does not exist')
+    elif response['status'] == 'FAIL':
+        print('Thread cannot be removed')
+    elif response['status'] == 'OK':
+        print('Thread removed')
+```
+
+#### Server side
+
+The server first read in the request from the client and convert the request to data and address.
+
+```python
+data, add = udp_receive_data(udp_socket)
+```
+
+Then it pass the data and address to the client_handler function.
+
+```python
+thread = threading.Thread(target=client_handler, args=(udp_socket, data, add))
+```
+
+The client_handler function will check the command and call the corresponding function.
+
+```python
+user, command = data['username'], data['command']
+print("{} issued {} command".format(user, command))
+if command == 'AUTH':
+    users, online_users = AUTH_USER(data, add, users, online_users, client_udp_socket)
+    return
+```
+
+Then it will send back a response depending on the data of the request from client.
+
+```python
+response = {
+    'status': 'OK',
+}
+thread_title, thread_creator, msg_index = data['thread_title'], data['username'], data['message_id']
+if thread_title not in threads:
+    response['status'] = 'NO_THREAD'
+    print('Thread {} does not exist'.format(thread_title))
+    udp_send_response(client_udp_socket, response, add)
+```
+
+Finally, the client will check the status of the response and print the corresponding message.

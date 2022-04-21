@@ -4,6 +4,8 @@ Created Mar 15, 2022
 @author: Wang Liao, z5306312
 
 Usage: python3 server.py [port]
+
+Python 3.9.7
 '''
 
 ########################################################################################################################
@@ -74,7 +76,6 @@ def server_startup(port):
     udp_socket = socket(AF_INET, SOCK_DGRAM)
     udp_socket.bind(('', port))
     udp_socket.settimeout(5) 
-
     print("Waiting for clients")
 
     while True:
@@ -101,7 +102,8 @@ def client_handler(client_udp_socket, data, add):
 
     user, command = data['username'], data['command']
 
-    print("{} issued {} command".format(user, command))
+    if command != 'AUTH':
+        print("{} issued {} command".format(user, command))
 
     if command == 'AUTH':
         users, online_users = AUTH_USER(data, add, users, online_users, client_udp_socket)
@@ -173,8 +175,6 @@ def AUTH_USER(data, add, users, online_users, client_udp_socket):
     }
     username = data['username']
 
-    print("Client authenticating")
-
     # if the username is in online_users, then the user is already logged in 
     if username in online_users:
         response['type'] = 'ONLINE'
@@ -194,6 +194,8 @@ def AUTH_USER(data, add, users, online_users, client_udp_socket):
     data, add = udp_receive_data(client_udp_socket)
     password = data['password']
 
+    print("Client authenticating")
+
     # for the old user
     if username in users:
         if password == users[username]:
@@ -205,7 +207,7 @@ def AUTH_USER(data, add, users, online_users, client_udp_socket):
         # if the password is incorrect, then the user is not logged in
             response['type'] = 'PWD'
             response['status'] = 'FAIL'
-            print('{} Incorrect password'.format(username))
+            print('Incorrect password')
     # for the new user
     else:
         response['type'] = 'NEW_SUC'
@@ -280,7 +282,7 @@ def POST_MESSAGE(data, add, threads, client_udp_socket):
     # if the thread title is not in the threads list, then the thread does not exist
     if thread_title not in threads:
         response['status'] = 'FAIL'
-        print('Thread {} does not exist'.format(thread_title))
+        print('Incorrect thread specified')
     else:
         # if the thread title is in the threads list, then add the message to the thread
         response['status'] = 'OK'
@@ -290,7 +292,7 @@ def POST_MESSAGE(data, add, threads, client_udp_socket):
                 msg_index += 1
         with open(thread_title, 'a+') as f:
             f.write('{} {}: {}\n'.format(str(msg_index), thread_creator, msg_content))
-        print('{} posted to {} thread'.format(thread_creator, thread_title))
+        print('Message posted to {} thread'.format(thread_title))
 
     udp_send_response(client_udp_socket, response, add)
     return threads
@@ -375,10 +377,10 @@ def READ_THREAD(data, add, threads, client_udp_socket):
         # if the thread is empty,
         if len(response['messages']) == 0:
             response['status'] = 'NO_MSG'
-            print('Thread {} is empty'.format(thread_title))
+            print('Thread {} read'.format(thread_title))
         else:
             response['status'] = 'OK'
-            print('Thread {} has been read'.format(thread_title))
+            print('Thread {} read'.format(thread_title))
 
     udp_send_response(client_udp_socket, response, add)
 
@@ -512,7 +514,7 @@ def DOWNLOAD_FILE(data, add, threads, files, client_udp_socket):
         # if the file is not in the files list
         if '{}-{}'.format(thread_title, file_name) not in files:
             response['status'] = 'FILE_NOT_FOUND'
-            print('File {} does not exist'.format(file_name))
+            print('{} does not exist in Thread {}'.format(file_name, thread_title))
             udp_send_response(client_udp_socket, response, add)
         else:
             # if the file is in the files list, then send the file
@@ -540,7 +542,7 @@ def DOWNLOAD_FILE(data, add, threads, files, client_udp_socket):
             data, add = udp_receive_data(client_udp_socket)
 
             if data['status'] == 'OK':
-                print('{} downloaded file {} from {} thread'.format(data['username'], file_name, thread_title))
+                print('{} downloaded from Thread {}'.format(file_name, thread_title))
             elif data['status'] == 'FAIL':
                 print('{} failed to download file {} from {} thread'.format(data['username'], file_name, thread_title))
 
@@ -594,6 +596,7 @@ def EXIT_USER(data, add, online_users, client_udp_socket):
         print('{} exited'.format(user_name))
         online_users.remove(user_name)
 
+    print("Waiting for clients")
     udp_send_response(client_udp_socket, response, add)
     return online_users
 

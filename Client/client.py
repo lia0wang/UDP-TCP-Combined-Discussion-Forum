@@ -4,6 +4,8 @@ Created Mar 15, 2022
 @author: Wang Liao, z5306312
 
 Usage: python3 client.py [port]
+
+Python 3.9.7
 '''
 
 ########################################################################################################################
@@ -60,22 +62,22 @@ def command_error_checker(input_commands):
         print('Invalid command')
         return True
     elif command == 'LST' and len_command != 1:
-        print('Invalid usage of {}'.format(command))
+        print('Incorrect syntax for {}'.format(command))
         return True
     elif command in ['CRT','RDT', 'RMV'] and len_command != 2:
-        print('Invalid usage of {}'.format(command))
+        print('Incorrect syntax for {}'.format(command))
         return True
     elif command == 'DLT' and len_command != 3:
-        print('Invalid usage of {}'.format(command))
+        print('Incorrect syntax for {}'.format(command))
         return True
     elif command in ['MSG', 'UPD', 'DWN'] and len_command < 3:
-        print('Invalid usage of {}'.format(command))
+        print('Incorrect syntax for {}'.format(command))
         return True
     elif command == 'EDT' and len_command < 4:
-        print('Invalid usage of {}'.format(command))
+        print('Incorrect syntax for {}'.format(command))
         return True
     elif command == 'XIT' and len_command != 1:
-        print('Invalid usage of {}'.format(command))
+        print('Incorrect syntax for {}'.format(command))
         return True
     return False
 
@@ -132,10 +134,9 @@ def udp_send_request(client_udp_socket, request):
     global PORT
     con_trails = 0
     client_udp_socket.sendto(json.dumps(request).encode('utf-8'), ('', PORT))
-    print('Sent request {} to server'.format(request))  
+    # print('Sent request {} to server'.format(request))  
 
     while 1:
-        print('Waiting for response...')
         try:
             con_trails = 0
             response, server_address = client_udp_socket.recvfrom(1024)
@@ -159,7 +160,7 @@ def udp_receive_response(client_udp_socket):
     global PORT
     con_trails = 0
     while 1:
-        print('Waiting for response...')
+        # print('Waiting for response...')
         try:
             con_trails = 0
             response, server_address = client_udp_socket.recvfrom(1024)
@@ -216,7 +217,7 @@ def AUTH_USER(udp_socket):
             user_info['password'] = password
             break
         elif response['status'] == 'FAIL':
-            print('Wrong username or password')
+            print('Invalid password')
             continue
 
 def CREATE_THREAD(input_commands, udp_s):
@@ -332,7 +333,6 @@ def READ_THREAD(input_commands, udp_s):
 
     # if the thread is not empty, list them
     if response['status'] == 'OK':
-        print('The messages in {} thread:'.format(thread_title))
         for message in response['messages']:
             print('{}'.format(message.strip()))
     # if the thread does not exist
@@ -340,7 +340,7 @@ def READ_THREAD(input_commands, udp_s):
         print('Thread {} does not exist'.format(thread_title))
     # if the thread exists but is empty
     elif response['status'] == 'NO_MSG':
-        print('No messages in the thread {}'.format(thread_title))
+        print('Thread {} is empty'.format(thread_title))
 
 def EDIT_MESSAGE(input_commands, udp_s):
     '''
@@ -419,7 +419,7 @@ def UPLOAD_FILE(input_commands, udp_s):
 
         # if the file is uploaded successfully
         if response['status'] == 'OK':
-            print('{} uploaded {}'.format(thread_title, file_name))
+            print('{} uploaded to {} thread'.format(file_name, thread_title))
         # if the file size is incorrect
         elif response['status'] == 'FAIL':
             print('{} has been corrupted'.format(file_name))
@@ -448,7 +448,7 @@ def DOWNLOAD_FILE(input_commands, udp_s):
         print('Thread {} does not exist'.format(thread_title))
     # if the file does not exist
     elif response['status'] == 'FILE_NOT_FOUND':
-        print('File {} does not exist'.format(file_name))
+        print('File does not exist in Thread {}'.format(thread_title))
     # if the file exists
     elif response['status'] == 'FILE_FOUND':
 
@@ -469,7 +469,7 @@ def DOWNLOAD_FILE(input_commands, udp_s):
 
         # if the size of downloaded file is same as the size of the file in the server
         if os.path.getsize(file_name) == int(file_size):
-            print('{} downloaded {}'.format(thread_title, file_name))
+            print('{} successfully downloaded'.format(file_name))
             file_request['status'] = 'OK'
         else:
             print('{} has been corrupted'.format(file_name))
